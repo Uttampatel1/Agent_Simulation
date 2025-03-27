@@ -9,8 +9,10 @@ from environment import Environment
 from ui_manager import UIManager
 from persistence import save_simulation, load_simulation
 # Import entity classes only if needed for direct checks/creation here
-# from agent import Agent
 from entities import Base #, Resource
+# Import Agent class if needed for type checking etc.
+# from agent import Agent
+
 
 def main():
     # --- Pygame & Font Initialization ---
@@ -83,7 +85,7 @@ def main():
     while running:
         # Calculate delta time
         base_dt = clock.tick(FPS) / 1000.0
-        dt = min(base_dt, 0.1) # Clamp dt to prevent large jumps
+        dt = min(base_dt, 0.1) # Clamp dt to prevent large jumps if frame rate is low
 
         # Get mouse position once per frame
         mouse_pos = pygame.mouse.get_pos()
@@ -104,14 +106,14 @@ def main():
                 elif event.key == pygame.K_F9: # Load
                     loaded_env, selected_id = load_simulation()
                     if loaded_env:
-                        environment = loaded_env # Replace environment instance
+                        environment = loaded_env # Replace current environment instance
                         # --- Restore Transients after Load ---
-                        # Recreate UI Manager with the new environment reference
+                        # Recreate UI Manager with the new environment reference and existing fonts
                         ui_manager = UIManager(environment, fonts)
                         # Find and re-select the agent based on the loaded ID
-                        environment.selected_agent = None
+                        environment.selected_agent = None # Clear selection first
                         if selected_id is not None:
-                             for agent in environment.agents:
+                             for agent in environment.agents: # Search in the newly loaded agents list
                                  if agent.id == selected_id:
                                      environment.selected_agent = agent
                                      break
@@ -174,13 +176,15 @@ def main():
                       elif current_brush == BRUSH_DELETE:
                            grid_pos = world_to_grid(mouse_pos[0], mouse_pos[1])
                            if grid_pos:
+                               # Optional: Add a check or small delay here to prevent
+                               # deleting too many entities instantly while dragging fast.
                                environment.delete_entity_at(grid_pos[0], grid_pos[1]) # Delete while dragging
 
         # --- Simulation Updates ---
         # Update environment and its contents only if not paused
-        # The environment's update method now handles applying the speed multiplier internally
+        # The environment's update method handles applying the speed multiplier internally
         if not game_state['paused']:
-            environment.update(dt)
+            environment.update(dt) # Pass the base delta time
 
         # --- Drawing ---
         screen.fill(BLACK) # Clear screen

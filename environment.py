@@ -2,7 +2,28 @@ import pygame
 import random
 import math # For day/night calc
 from collections import deque
-from constants import *
+
+# --- Specific Imports from constants ---
+# Import only what's needed to avoid namespace pollution and potential errors
+from constants import (
+    SCREEN_WIDTH, SCREEN_HEIGHT, SIM_WIDTH, SIM_HEIGHT, UI_PANEL_WIDTH,
+    GRID_CELL_SIZE, GRID_WIDTH, GRID_HEIGHT, AGENT_SIZE,
+    RESOURCE_SIZE, BASE_SIZE, BUILD_COST, BUILD_TIME,
+    MAX_ENERGY, MAX_HUNGER, LOW_ENERGY_THRESHOLD, HIGH_HUNGER_THRESHOLD,
+    ENERGY_DECAY_RATE_DAY, ENERGY_DECAY_RATE_NIGHT, HUNGER_INCREASE_RATE,
+    EAT_AMOUNT, REST_AMOUNT, EAT_TIME, REST_TIME, AGENT_CAPACITY,
+    DAY_NIGHT_CYCLE_DURATION, DAY_DURATION_RATIO, MAX_NIGHT_ALPHA,
+    FPS, MAX_EVENT_LOG_MESSAGES,
+    WHITE, BLACK, RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, CYAN, GREY,
+    DARK_GREY, LIGHT_GREY, OBSTACLE_COLOR, BASE_COLOR, NIGHT_OVERLAY_COLOR,
+    TERRAIN_EMPTY, TERRAIN_PLAINS, TERRAIN_GRASS, TERRAIN_MUD, TERRAIN_WALL,
+    OBSTACLE_COST, TERRAIN_TYPES, TERRAIN_COLORS, # <-- Make sure TERRAIN_COLORS is imported
+    BRUSH_SELECT, BRUSH_WALL, BRUSH_PLAINS, BRUSH_GRASS, BRUSH_MUD, BRUSH_CLEAR,
+    BRUSH_SPAWN_AGENT, BRUSH_SPAWN_RESOURCE, BRUSH_DELETE, PAINT_BRUSHES,
+    MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, ROLE_COLLECTOR, ROLE_BUILDER
+)
+# --- End Specific Imports ---
+
 from utils import world_to_grid, grid_to_world_center, clamp
 from quadtree import Quadtree
 from entities import Obstacle, Base, Resource
@@ -43,8 +64,8 @@ class Environment:
         self.night_alpha = 0 # Transparency of night overlay (0-MAX_NIGHT_ALPHA)
 
         # Reset class counters (optional, careful with loading)
-        Agent._id_counter = 0
-        Resource._id_counter = 0
+        # Agent._id_counter = 0
+        # Resource._id_counter = 0
 
 
     def log_event(self, message):
@@ -377,11 +398,9 @@ class Environment:
     def update(self, dt):
         """Main update loop for the environment. Applies speed multiplier."""
         # Calculate effective delta time for this frame based on speed multiplier
-        # Time progresses even if visually paused if we use dt here,
-        # but simulation logic uses effective_dt. Let's use effective_dt for time too.
         effective_dt = dt * self.speed_multiplier
 
-        # 0. Update Day/Night Cycle
+        # 0. Update Day/Night Cycle (using effective_dt so it pauses with sim)
         self._update_day_night_cycle(effective_dt)
 
         # 1. Rebuild Quadtree (Essential for accurate neighbor finding)
@@ -415,7 +434,12 @@ class Environment:
                  if hasattr(entity, 'update_rect'):
                      entity.update_rect()
                  elif hasattr(entity, 'pos') and hasattr(entity.rect, 'center'): # Fallback for static entities
-                     entity.rect.center = (int(entity.pos.x), int(entity.pos.y))
+                     # Ensure pos is Vector2 before accessing x/y
+                     if isinstance(entity.pos, pygame.Vector2):
+                         entity.rect.center = (int(entity.pos.x), int(entity.pos.y))
+                     else: # Log error if pos is not a vector
+                        # print(f"Warning: Entity {entity} has non-vector pos: {entity.pos}")
+                        pass
 
                  # Final check: only insert if center is within sim bounds
                  if 0 <= entity.rect.centerx < self.sim_width and 0 <= entity.rect.centery < self.sim_height:
@@ -459,7 +483,7 @@ class Environment:
             # Create a surface with per-pixel alpha
             night_surface = pygame.Surface((self.sim_width, self.sim_height), pygame.SRCALPHA)
             # Fill with the night color and calculated alpha
-            night_surface.fill((*NIGHT_OVERLAY_COLOR, self.night_alpha))
+            night_surface.fill((*NIGHT_OVERLAY_COLOR, int(self.night_alpha))) # Ensure alpha is int
             # Blit the overlay onto the main screen
             screen.blit(night_surface, (0, 0))
 
@@ -470,10 +494,13 @@ class Environment:
         for gy in range(GRID_HEIGHT):
             for gx in range(GRID_WIDTH):
                 terrain_cost = self.grid[gy][gx]
-                color = TERRAIN_COLORS.get(terrain_cost, GREY) # Get color from cost
+                # --- This is the corrected line ---
+                # Use TERRAIN_COLORS dictionary's get method safely
+                color = TERRAIN_COLORS.get(terrain_cost, GREY)
+                # --- End Correction ---
                 rect = pygame.Rect(gx * GRID_CELL_SIZE, gy * GRID_CELL_SIZE, GRID_CELL_SIZE, GRID_CELL_SIZE)
                 # Draw rect if it's within the sim area
                 if sim_rect.colliderect(rect): # Basic check
                     pygame.draw.rect(screen, color, rect)
                     # Optional: Draw grid lines
-                    pygame.draw.rect(screen, DARK_GREY, rect, 1)
+                    # pygame.draw.rect(screen, DARK_GREY, rect, 1)
