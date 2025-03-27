@@ -4,15 +4,11 @@ import random
 
 # Import project modules
 from constants import *
-from utils import * # world_to_grid etc.
+from utils import *
 from environment import Environment
 from ui_manager import UIManager
 from persistence import save_simulation, load_simulation
-# Import entity classes only if needed for direct checks/creation here
-from entities import Base #, Resource
-# Import Agent class if needed for type checking etc.
-# from agent import Agent
-
+from entities import Base # For initial setup
 
 def main():
     # --- Pygame & Font Initialization ---
@@ -55,153 +51,103 @@ def main():
     # --- Initial Population ---
     base_x, base_y = SIM_WIDTH // 4, SIM_HEIGHT // 2
     environment.set_base(Base(base_x, base_y))
-    if not environment.base:
-        print("Critical Error: Failed to place base. Exiting.")
-        pygame.quit()
-        sys.exit()
-
-    # Ensure area around base is clear
+    if not environment.base: print("Critical Error: No base."); pygame.quit(); sys.exit()
+    # Clear around base (same as before)
     if environment.base.grid_pos:
-         gx, gy = environment.base.grid_pos
-         for dx in range(-1, 2):
-             for dy in range(-1, 2):
-                  clear_x, clear_y = gx + dx, gy + dy
-                  if 0 <= clear_x < GRID_WIDTH and 0 <= clear_y < GRID_HEIGHT:
-                      # Only clear if it's currently an obstacle
-                      if environment.grid[clear_y][clear_x] == OBSTACLE_COST:
-                           environment.grid[clear_y][clear_x] = TERRAIN_PLAINS
-                           # Also remove from obstacle list if present
-                           environment.obstacles = [o for o in environment.obstacles if o.grid_pos != (clear_x, clear_y)]
+        gx, gy = environment.base.grid_pos
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                cx, cy = gx+dx, gy+dy
+                if 0 <= cx < GRID_WIDTH and 0 <= cy < GRID_HEIGHT and environment.grid[cy][cx] == OBSTACLE_COST:
+                     environment.grid[cy][cx] = TERRAIN_PLAINS
+                     environment.obstacles = [o for o in environment.obstacles if o.grid_pos != (cx, cy)]
 
-    # Add some initial features
-    environment.create_obstacle_line(SIM_WIDTH * 0.6, SIM_HEIGHT * 0.1, SIM_WIDTH * 0.7, SIM_HEIGHT * 0.9)
-    environment.create_obstacle_line(SIM_WIDTH * 0.1, SIM_HEIGHT * 0.8, SIM_WIDTH * 0.5, SIM_HEIGHT * 0.7)
+    # Add initial features (maybe add water?)
+    environment.create_obstacle_line(SIM_WIDTH*0.6, SIM_HEIGHT*0.1, SIM_WIDTH*0.7, SIM_HEIGHT*0.9)
+    environment.create_obstacle_line(SIM_WIDTH*0.1, SIM_HEIGHT*0.8, SIM_WIDTH*0.5, SIM_HEIGHT*0.7)
+    # Add a water source or two
+    environment.create_random_entity('water')
+    environment.create_random_entity('water')
+    # Add some threats?
+    environment.create_random_entity('threat')
+    # Add resources/agents
     for _ in range(40): environment.create_random_entity('resource')
-    for _ in range(60): environment.create_random_entity('agent') # Roles assigned in Agent.__init__
+    for _ in range(60): environment.create_random_entity('agent')
     environment.log_event("Simulation Started.")
 
     # --- Main Loop ---
     running = True
     while running:
-        # Calculate delta time
-        base_dt = clock.tick(FPS) / 1000.0
-        dt = min(base_dt, 0.1) # Clamp dt to prevent large jumps if frame rate is low
-
-        # Get mouse position once per frame
+        base_dt = clock.tick(FPS) / 1000.0; dt = min(base_dt, 0.1)
         mouse_pos = pygame.mouse.get_pos()
-        # Check if mouse is within simulation area
-        sim_area_rect = pygame.Rect(0, 0, SIM_WIDTH, SIM_HEIGHT)
-        mouse_in_sim = sim_area_rect.collidepoint(mouse_pos)
+        sim_area_rect = pygame.Rect(0, 0, SIM_WIDTH, SIM_HEIGHT); mouse_in_sim = sim_area_rect.collidepoint(mouse_pos)
 
         # --- Event Handling ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-            # --- Keyboard Input ---
+            if event.type == pygame.QUIT: running = False
+            # --- Keyboard (same as before) ---
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE: running = False
-                elif event.key == pygame.K_p: game_state['paused'] = not game_state['paused'] # Pause toggle
-                elif event.key == pygame.K_F5: save_simulation(environment) # Save
+                elif event.key == pygame.K_p: game_state['paused'] = not game_state['paused']
+                elif event.key == pygame.K_F5: save_simulation(environment)
                 elif event.key == pygame.K_F9: # Load
                     loaded_env, selected_id = load_simulation()
                     if loaded_env:
-                        environment = loaded_env # Replace current environment instance
-                        # --- Restore Transients after Load ---
-                        # Recreate UI Manager with the new environment reference and existing fonts
-                        ui_manager = UIManager(environment, fonts)
-                        # Find and re-select the agent based on the loaded ID
-                        environment.selected_agent = None # Clear selection first
+                        environment = loaded_env; ui_manager = UIManager(environment, fonts) # Recreate UI
+                        environment.selected_agent = None # Find selected agent
                         if selected_id is not None:
-                             for agent in environment.agents: # Search in the newly loaded agents list
-                                 if agent.id == selected_id:
-                                     environment.selected_agent = agent
-                                     break
+                             for agent in environment.agents:
+                                 if agent.id == selected_id: environment.selected_agent = agent; break
                         environment.log_event("Simulation Loaded.")
-                        print("Loaded environment assigned and UI/Selection restored.") # Console feedback
-                # Debug toggles
                 elif event.key == pygame.K_g: game_state['draw_grid'] = not game_state['draw_grid']
                 elif event.key == pygame.K_q: game_state['draw_quadtree'] = not game_state['draw_quadtree']
-                # Brush size adjustment keys
                 elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
-                    environment.brush_size = clamp(environment.brush_size - 1, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE)
-                    ui_manager._update_button_selected_state() # Update UI display/tooltips
-                elif event.key == pygame.K_EQUALS or event.key == pygame.K_KP_PLUS: # Use equals/plus key
-                    environment.brush_size = clamp(environment.brush_size + 1, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE)
-                    ui_manager._update_button_selected_state() # Update UI display/tooltips
+                    environment.brush_size = clamp(environment.brush_size - 1, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE); ui_manager._update_button_selected_state()
+                elif event.key == pygame.K_EQUALS or event.key == pygame.K_KP_PLUS:
+                    environment.brush_size = clamp(environment.brush_size + 1, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE); ui_manager._update_button_selected_state()
 
-            # --- Mouse Input ---
+            # --- Mouse Handling (Added Spawn Water/Threat) ---
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # Left Mouse Button Click
-                    # Check UI Panel First
-                    if mouse_pos[0] >= UI_PANEL_X:
+                if event.button == 1: # Left Click
+                    if mouse_pos[0] >= UI_PANEL_X: # UI Click
                         action_result = ui_manager.handle_click(mouse_pos, game_state)
-                        # Handle signals from UI click
-                        if action_result == "save":
-                            save_simulation(environment)
-                        elif action_result == "load":
-                            # Prefer F9 for load consistency, provide feedback
-                            print("Load requested via button. Press F9 to load.")
-                            environment.log_event("Load requested via button (Use F9).")
-
-                    # Check Simulation Area if not UI click
-                    elif mouse_in_sim:
+                        if action_result == "save": save_simulation(environment)
+                        elif action_result == "load": print("Load requested via button. Press F9.")
+                    elif mouse_in_sim: # Simulation Area Click
                         current_brush = environment.paint_brush
-                        # Handle action based on selected brush
-                        if current_brush == BRUSH_SELECT:
-                            environment.select_agent_at(mouse_pos)
-                        elif current_brush in PAINT_BRUSHES:
-                            game_state['is_painting'] = True # Start drag painting
-                            environment.paint_terrain(mouse_pos) # Paint single cell on click
-                        elif current_brush == BRUSH_SPAWN_AGENT:
-                             environment.create_agent_at(mouse_pos[0], mouse_pos[1]) # Spawn on click
-                        elif current_brush == BRUSH_SPAWN_RESOURCE:
-                             environment.create_resource_at(mouse_pos[0], mouse_pos[1]) # Spawn on click
+                        if current_brush == BRUSH_SELECT: environment.select_agent_at(mouse_pos)
+                        elif current_brush in PAINT_BRUSHES: game_state['is_painting'] = True; environment.paint_terrain(mouse_pos)
+                        elif current_brush == BRUSH_SPAWN_AGENT: environment.create_agent_at(mouse_pos[0], mouse_pos[1])
+                        elif current_brush == BRUSH_SPAWN_RESOURCE: environment.create_resource_at(mouse_pos[0], mouse_pos[1])
+                        elif current_brush == BRUSH_SPAWN_WATER: environment.create_water_source_at(mouse_pos[0], mouse_pos[1]) # New
+                        elif current_brush == BRUSH_SPAWN_THREAT: environment.create_threat_at(mouse_pos[0], mouse_pos[1])    # New
                         elif current_brush == BRUSH_DELETE:
                              grid_pos = world_to_grid(mouse_pos[0], mouse_pos[1])
-                             if grid_pos:
-                                 environment.delete_entity_at(grid_pos[0], grid_pos[1]) # Delete on click
-                                 game_state['is_painting'] = True # Enable drag-delete
+                             if grid_pos: environment.delete_entity_at(grid_pos[0], grid_pos[1]); game_state['is_painting'] = True
 
             elif event.type == pygame.MOUSEBUTTONUP:
-                 if event.button == 1: # Left Mouse Button Release
-                      game_state['is_painting'] = False # Stop drag painting/deleting
+                 if event.button == 1: game_state['is_painting'] = False
 
             elif event.type == pygame.MOUSEMOTION:
-                 # Handle dragging actions if painting state is active
                  if game_state['is_painting'] and mouse_in_sim:
                       current_brush = environment.paint_brush
-                      if current_brush in PAINT_BRUSHES:
-                           environment.paint_terrain(mouse_pos) # Paint while dragging
+                      if current_brush in PAINT_BRUSHES: environment.paint_terrain(mouse_pos)
                       elif current_brush == BRUSH_DELETE:
                            grid_pos = world_to_grid(mouse_pos[0], mouse_pos[1])
-                           if grid_pos:
-                               # Optional: Add a check or small delay here to prevent
-                               # deleting too many entities instantly while dragging fast.
-                               environment.delete_entity_at(grid_pos[0], grid_pos[1]) # Delete while dragging
+                           if grid_pos: environment.delete_entity_at(grid_pos[0], grid_pos[1])
 
-        # --- Simulation Updates ---
-        # Update environment and its contents only if not paused
-        # The environment's update method handles applying the speed multiplier internally
+        # --- Updates ---
         if not game_state['paused']:
-            environment.update(dt) # Pass the base delta time
+            environment.update(dt) # Pass base dt
 
         # --- Drawing ---
-        screen.fill(BLACK) # Clear screen
-
-        # Draw simulation area contents (grid, entities, night overlay)
+        screen.fill(BLACK)
         environment.draw_sim_area(screen, game_state['draw_grid'], game_state['draw_quadtree'])
-
-        # Draw UI panel contents (minimap, buttons, info, log)
         ui_manager.draw(screen, clock, game_state)
-
-        # Update the full display surface
         pygame.display.flip()
 
     # --- Cleanup ---
-    pygame.quit()
-    sys.exit()
+    pygame.quit(); sys.exit()
 
-# --- Run ---
 if __name__ == '__main__':
     main()
